@@ -1,0 +1,155 @@
+#install.packages("lmtest")
+#install.packages("TSA")
+#install.packages("forecast")
+#install.packages("fGarch")
+library(tseries)
+library(astsa)
+library(forecast)
+library(fGarch)
+library(TSA)
+
+##Wczytywanie danych
+dane <- readRDS(file = "C:/Users/blakle/downloads/wig30components(3).RDS")
+#sss <- readRDS(file = "C:/Users/blakle/downloads/g8(1).RDS")
+#sss
+dane
+##Przygotowanie tablicy wyników
+predykcje <- data.frame(
+    row.names=c(
+      'acp', 'alr', 'att', 'bhw', 'bzw', 'ccc', 'cdr', 'cps', 'ena', 'eng',
+      'eur', 'gtc', 'ing', 'jsw', 'ker', 'kgh', 'lpp', 'lts', 'lwb', 'mbk',
+      'opl', 'peo', 'pge', 'pgn', 'pkn', 'pko', 'pkp', 'pzu', 'sns', 'tpe'
+    	),
+	GARCH=rep(0, 30),
+	ARIMA=rep(0, 30),
+	Trend=rep(0, 30),
+	StopaZwrotu=rep(0, 30),
+	Ranking=rep(0, 30),
+	Informacja=rep(0,30)
+	)
+
+wynik <- data.frame(
+    row.names=c(
+      'acp', 'alr', 'att', 'bhw', 'bzw', 'ccc', 'cdr', 'cps', 'ena', 'eng',
+      'eur', 'gtc', 'ing', 'jsw', 'ker', 'kgh', 'lpp', 'lts', 'lwb', 'mbk',
+      'opl', 'peo', 'pge', 'pgn', 'pkn', 'pko', 'pkp', 'pzu', 'sns', 'tpe'
+    	),
+	quantity=rep(0, 30),
+	value=rep(0, 30)
+	)
+
+
+##Usuwanie brakujących wartości
+for(i in 1:ncol(danee))
+{
+dane <- dane[!is.na(dane[,i]),]
+}
+dane
+
+##Funkcja zwracająca predykcje modelu GARCH
+modelGARCH = function(notowania)
+{
+  model <- garchFit(~garch(1,1), notowania, cond.dist='sstd', trace=FALSE)
+  prognoza <- predict(model, n.ahead=1)[,1]
+  return(prognoza)
+}
+##Funkcja zwracająca predykcje modelu ARIMA
+modelARIMA = function(notowania, zroznicowanie)
+{  
+  4 -> maxP
+  4 -> maxQ
+  matrix(NA, maxP + 1, maxQ + 1) -> AIC
+  txtProgressBar(min = 0, max = ncol(AIC) * nrow(AIC), style = 3) -> PB
+  for(p in 0:maxP) {
+    for(q in 0:maxQ) {
+      tryCatch({
+        AIC(arima(notowania, c(p, zroznicowanie, q), method="ML")) -> AIC[p + 1, q + 1]
+      },
+      error = function(e) e,
+      warning = function(e) e
+      )
+      setTxtProgressBar(PB, (maxQ + 1) * p + q)
+    }
+  }
+  AIC
+  (c((which.min(AIC) - 1) %% (maxP + 1), (which.min(AIC) - 1) %/% (maxP + 1)) -> params)
+  close(PB)
+  
+  model <- arima(notowania, c(params[1], zroznicowanie, params[2]))
+  prognoza <- predict(model, n.ahead=1)$pred
+
+  return(prognoza[1])
+}
+
+##Funkcja zwracająca predykcje modelu trendu dla 10 ostatnich obserwacje
+modeltrendu = function(notowania)
+{
+	ostatni <-length(notowania)
+	pierwszy <- ostatni-10
+	model <- ets(notowania[pierwszy:ostatni], model="ZZZ")
+    prognoza <- predict(model, n.ahead=1)$mean[1]    
+	return(prognoza)
+}     
+
+##########################################################################
+
+for (i in 1:30)
+{
+spolka <- dane[,i]
+spolka
+
+x <- length(spolka)
+spolkai <- log(spolka[-1] / spolka[-x]) 
+spolkai
+
+ADF <- adf.test(spolkai)$p.value
+ADF
+KPSS <- kpss.test(spolkai)$p.value
+KPSS
+if(ADF < 0.05 && KPSS > 0.05)
+{
+predykcje[i,1] = modelGARCH(spolkai)
+predykcje[i,2] = modelARIMA(spolkai,0)
+predykcje[i,3] = modeltrendu(spolkai)
+predykcje[i,4] = (predykcje[i,1] + predykcje[i,2] + predykcje[i,3]) / 3
+if(predykcje[i,4] > 0){predykcje[i,6] <- 'kupuj'}
+	else{predykcje[i,6] <- 'sprzedaj'}
+
+}
+
+else
+{
+	zmienna = diff(spolkai)
+    ADF = adf.test(spolkai)$p.value
+    KPSS = kpss.test(spolkai)$p.value
+    
+    if(ADF < 0.05 && KPSS > 0.05)
+	{
+	predykcje[i,1] <- modelGARCH(spolkai)
+	predykcje[i,2] <- modelARIMA(spolkai,1)
+	predykcje[i,3] <- modeltrendu(spolkai)
+	predykcje[i,4] = (predykcje[i,1] + predykcje[i,2] + predykcje[i,3]) / 3
+	if(predykcje[i,4] > 0){predykcje[i,6] <- 'kupuj'}
+	else(predykcje[i,6] <- 'sprzedaj')
+	}
+
+}
+}
+predykcje[,5] <- rank(predykcje[,4])
+
+
+#for (i in 1:30)
+#{
+#if(predykcje[i,5] > 25 && predykcje[i,4] > 0)
+#{
+#wynik[i,2] <- 10000
+#wynik[i,1] <- round(wynik[i,2]/dane[length(dane),i], digits=0)
+#}
+
+#}
+#Tablica wyników
+predykcje
+#wynik
+
+#saveRDS(wynik, file = "C:/Users/blakle/downloads/grupa8.RDS")
+
